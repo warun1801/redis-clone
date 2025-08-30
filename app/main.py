@@ -2,6 +2,7 @@ import asyncio
 import os
 from dotenv import load_dotenv
 from helper import redis_protocol_parser, executor
+from collections import defaultdict
 
 load_dotenv()
 BUFF_SIZE = int(os.getenv('BUFF_SIZE'))
@@ -10,17 +11,18 @@ PORT = int(os.getenv('PORT'))
 
 async def main():
     cache = {}
-    print(f'Server started at HOST: {HOST} and PORT: {PORT}')
+    time_cache = {}
+    block_list = defaultdict(list)
     async def echo_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         while x := await reader.read(BUFF_SIZE):
             command, arg_list = redis_protocol_parser(x)
-            await executor(command, arg_list, writer, cache)
+            await executor(command, arg_list, writer, cache, time_cache, block_list)
         
         writer.close()
         await writer.wait_closed() # waits for the writer to be closed properly
 
 
-    server = await asyncio.start_server(echo_handler, HOST, PORT)
+    server = await asyncio.start_server(echo_handler, 'localhost', 6379)
     async with server:
         await server.serve_forever()
 
