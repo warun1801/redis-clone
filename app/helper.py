@@ -1,52 +1,23 @@
 import asyncio
-import time
 from collections import deque
+
+from commands import *
+
 END_STR = '\r\n'
 
 async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, cache: dict, time_cache: dict, block_list) -> None:
     client_name = writer.get_extra_info('peername')
+    command = Command.from_string(command)
     match command:
-        case 'ping':
-            writer.write(msg('PONG', 'REPLY'))
-            await writer.drain() # waits for the writer to complete completely
-            return
-        case 'echo':
-            for arg in arg_list:
-                writer.write(msg(arg, 'ECHO'))
-                await writer.drain()
-            return
-        case 'set':
-            cache[arg_list[0]] = arg_list[1]
-            if 'px' in [str(i).lower() for i in arg_list]:
-                curr = int(round(time.time() * 1000))
-                time_cache[arg_list[0]] = (curr, int(arg_list[3]))
-                
-            writer.write(msg('OK', 'REPLY'))
-            await writer.drain()
-            return
-        case 'get':
-            curr = int(round(time.time() * 1000))
-            if arg_list[0] in cache:
-                if arg_list[0] not in time_cache:
-                    writer.write(msg(cache[arg_list[0]], 'ECHO'))
-                    await writer.drain()
-                else:
-                    if sum(time_cache[arg_list[0]]) < curr:
-                        # delete expired keys on read
-                        del cache[arg_list[0]]
-                        del time_cache[arg_list[0]]
-
-                        writer.write(msg('-1', 'SIZE'))
-                        await writer.drain()
-                        
-                    else:
-                        writer.write(msg(cache[arg_list[0]], 'ECHO'))
-                        await writer.drain()
-            else:
-                writer.write(msg('-1', 'SIZE'))
-                await writer.drain()
-            return
-        case 'rpush':
+        case Command.PING:
+            await PingCommand(writer, arg_list, cache, time_cache, block_list).execute()
+        case Command.ECHO:
+            await EchoCommand(writer, arg_list, cache, time_cache, block_list).execute()
+        case Command.SET:
+            await SetCommand(writer, arg_list, cache, time_cache, block_list).execute()
+        case Command.GET:
+            await GetCommand(writer, arg_list, cache, time_cache, block_list).execute()
+        case Command.RPUSH:
             if arg_list[0] not in cache:
                 cache[arg_list[0]] = deque([])
             cache[arg_list[0]].extend(arg_list[1:])
@@ -54,7 +25,7 @@ async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, c
             writer.write(msg(len(cache[arg_list[0]]), 'RESP'))
             await writer.drain()
             return
-        case 'lpush':
+        case Command.LPUSH:
             if arg_list[0] not in cache:
                 cache[arg_list[0]] = deque([])
             cache[arg_list[0]].extendleft(arg_list[1:])
@@ -62,7 +33,7 @@ async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, c
             writer.write(msg(len(cache[arg_list[0]]), 'RESP'))
             await writer.drain()
             return
-        case 'lrange':
+        case Command.LRANGE:
             if arg_list[0] not in cache:
                 writer.write(msg('0', 'RANGE'))
             else:
@@ -79,14 +50,14 @@ async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, c
             
             await writer.drain()
             return
-        case 'llen':
+        case Command.LLEN:
             l = 0
             if arg_list[0] in cache:
                 l = len(cache[arg_list[0]])
             writer.write(msg(f'{l}', 'RESP'))
             await writer.drain()
             return
-        case 'lpop':
+        case Command.LPOP:
             sz = 1
             if len(arg_list) > 1:
                 sz = int(arg_list[1])  
@@ -105,7 +76,7 @@ async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, c
                     writer.write(msg(','.join(vals), 'RANGE'))
             await writer.drain()
             return
-        case 'rpop':
+        case Command.RPOP:
             sz = 1
             if len(arg_list) > 1:
                 sz = int(arg_list[1])  
@@ -124,7 +95,7 @@ async def executor(command: str, arg_list: list, writer: asyncio.StreamWriter, c
                     writer.write(msg(','.join(vals), 'RANGE'))
             await writer.drain()
             return
-        case 'blpop':
+        case Command.BLPOP:
             if arg_list[0] in cache and len(cache[arg_list[0]]) > 0:
                 vals = ['2', arg_list[0], cache[arg_list[0]].popleft()]
                 writer.write(msg(','.join(vals), 'RANGE'))
